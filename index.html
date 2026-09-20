@@ -175,6 +175,9 @@ h2{margin:0;font-size:19px;font-weight:600;letter-spacing:-.01em}
 .note-more{margin-top:6px;color:var(--accent-text);font-weight:600;font-size:13px}
 .note-more:hover{text-decoration:underline}
 mark{background:var(--pop);color:var(--on-pop);border-radius:4px;padding:0 2px}
+.note-textarea{display:block;width:100%;min-height:80px;resize:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:var(--r-md);padding:12px;font-size:14.5px;line-height:1.5;outline:none;font-family:var(--font-body);transition:border-color .15s,box-shadow .15s}
+.note-textarea:focus{border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.note-actions{display:flex;gap:8px;margin-top:10px}
 
 /* ---------- Today ---------- */
 .stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
@@ -631,12 +634,39 @@ function renderNotes(){
   list.forEach(n=>{
     const el=document.createElement("article");
     el.className="note"+(n===freshNote?" enter":"");
-    el.innerHTML='<div class="note-top"><time class="note-time"></time><button class="icon-btn note-del" aria-label="Delete note"><svg class="ic"><use href="#i-trash"/></svg></button></div><div class="note-text"></div><button class="note-more" hidden></button>';
+    el.innerHTML='<div class="note-top"><time class="note-time"></time><div style="display:flex;gap:4px"><button class="icon-btn note-edit" aria-label="Edit note"><svg class="ic"><use href="#i-edit"/></svg></button><button class="icon-btn note-del" aria-label="Delete note"><svg class="ic"><use href="#i-trash"/></svg></button></div></div><div class="note-text"></div><textarea class="note-textarea" maxlength="5000" hidden></textarea><div class="note-actions" hidden><button class="btn btn-sm btn-primary" data-save>Save</button><button class="btn btn-sm btn-soft" data-cancel>Cancel</button></div><button class="note-more" hidden></button>';
     el.querySelector(".note-time").textContent=formatStamp(n.timestamp);
-    const txt=el.querySelector(".note-text"),more=el.querySelector(".note-more");
+    const txt=el.querySelector(".note-text"),area=el.querySelector(".note-textarea"),more=el.querySelector(".note-more"),editBtn=el.querySelector(".note-edit"),actions=el.querySelector(".note-actions");
     fillText(txt,n.text,q);
     const open=expanded.has(n);
     txt.classList.toggle("clamp",!open);
+    
+    function closeEdit(){
+      txt.hidden=false;
+      area.hidden=true;
+      actions.hidden=true;
+      editBtn.hidden=false;
+      txt.classList.toggle("clamp",open&&!expanded.has(n));
+    }
+    
+    editBtn.onclick=()=>{
+      area.value=n.text;
+      txt.hidden=true;
+      area.hidden=false;
+      actions.hidden=false;
+      editBtn.hidden=true;
+      area.focus();
+    };
+    
+    el.querySelector("[data-save]").onclick=()=>{
+      const v=area.value.trim();
+      if(v){n.text=v;save()}
+      else state.notes.splice(state.notes.indexOf(n),1);
+      renderNotes();
+    };
+    
+    el.querySelector("[data-cancel]").onclick=closeEdit;
+    
     el.querySelector(".note-del").onclick=()=>{
       state.notes.splice(state.notes.indexOf(n),1);
       expanded.delete(n);save();renderNotes();
