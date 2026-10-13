@@ -230,6 +230,14 @@ mark{background:var(--pop);color:var(--on-pop);border-radius:4px;padding:0 2px}
 .custom-color input::-webkit-color-swatch{border:0;border-radius:50%}
 .custom-color input::-moz-color-swatch{border:0;border-radius:50%}
 
+.sound-list{display:flex;flex-direction:column;gap:6px}
+.sound-chip{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:10px 14px;border-radius:var(--r-md);background:var(--soft);border:1px solid transparent;font-weight:600;font-size:14px;color:var(--ink);text-align:left;transition:border-color .15s,background .15s}
+.sound-chip:hover{border-color:var(--accent)}
+.sound-chip[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.sound-chip .ic{width:16px;height:16px;color:var(--muted);flex:none}
+.sound-custom{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.sound-filename{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+
 /* ---------- Toast ---------- */
 .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:var(--r-md);font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:60;max-width:calc(100% - 32px)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -463,6 +471,16 @@ mark{background:var(--pop);color:var(--on-pop);border-radius:4px;padding:0 2px}
         <label class="custom-color"><input type="color" id="accentColor" value="#1f6b56" aria-label="Custom accent color"><span>Custom</span></label>
       </div>
     </div>
+    <div class="field">
+      <div class="field-label">Sound</div>
+      <div class="sound-list" id="soundList"></div>
+      <div class="sound-custom">
+        <button class="btn btn-soft btn-sm" id="uploadSoundBtn"><svg class="ic"><use href="#i-upload"/></svg><span>Upload your own</span></button>
+        <input type="file" id="soundFileInput" accept="audio/*" hidden>
+        <span class="sound-filename" id="soundFileName"></span>
+        <button class="icon-btn" id="removeSoundBtn" hidden aria-label="Remove custom sound"><svg class="ic"><use href="#i-x"/></svg></button>
+      </div>
+    </div>
     <div class="modal-foot">
       <button class="btn btn-primary" id="doneSettings">Done</button>
     </div>
@@ -490,11 +508,89 @@ const DEFAULT_QUOTE="Make hay while the sun shines.",DEFAULT_ACCENT="#1f6b56",OL
 const SWATCHES=["#1f6b56","#3a86ff","#6d5bd0","#e4572e","#c2255c","#334155"];
 const CIRC=2*Math.PI*52;
 
+const SOUND_LIST=[{id:"chime",name:"Chime"},{id:"bell",name:"Bell"},{id:"digital",name:"Digital"},{id:"soft",name:"Soft"},{id:"none",name:"None (silent)"}];
+let audioCtx=null;
+function getAudioCtx(){
+  if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  if(audioCtx.state==="suspended")audioCtx.resume();
+  return audioCtx;
+}
+let previewAudio=null,previewTimer=null,activeOscNodes=[];
+function stopPreviewSound(){
+  if(previewTimer){clearTimeout(previewTimer);previewTimer=null}
+  if(previewAudio){previewAudio.pause();previewAudio.currentTime=0;previewAudio=null}
+  activeOscNodes.forEach(o=>{try{o.stop()}catch(e){}});
+  activeOscNodes=[];
+}
+function playCustomPreview(dataUrl){
+  stopPreviewSound();
+  const a=new Audio(dataUrl);
+  previewAudio=a;
+  a.play().catch(()=>{});
+  previewTimer=setTimeout(()=>{if(previewAudio===a){a.pause();a.currentTime=0;previewAudio=null}},5000);
+}
+function tone(ctx,freq,start,dur,type,peak){
+  const osc=ctx.createOscillator(),gain=ctx.createGain();
+  osc.type=type;osc.frequency.value=freq;
+  osc.connect(gain);gain.connect(ctx.destination);
+  const t0=ctx.currentTime+start;
+  gain.gain.setValueAtTime(0,t0);
+  gain.gain.linearRampToValueAtTime(peak,t0+.02);
+  gain.gain.exponentialRampToValueAtTime(.001,t0+dur);
+  osc.start(t0);osc.stop(t0+dur+.05);
+  activeOscNodes.push(osc);
+}
+const PRESET_SOUNDS={
+  chime(ctx){tone(ctx,1046.5,0,.5,"sine",.25);tone(ctx,1318.5,.12,.6,"sine",.22)},
+  bell(ctx){tone(ctx,987.77,0,1.1,"sine",.3);tone(ctx,1975.5,0,.8,"sine",.12);tone(ctx,2959,0,.5,"sine",.06)},
+  digital(ctx){[0,.18,.36].forEach(t=>tone(ctx,880,t,.14,"square",.18))},
+  soft(ctx){tone(ctx,523.25,0,1.2,"sine",.18);tone(ctx,659.25,.05,1.3,"sine",.14)}
+};
+function playPresetSound(id){
+  if(!PRESET_SOUNDS[id])return;
+  stopPreviewSound();
+  PRESET_SOUNDS[id](getAudioCtx());
+}
+function playSound(){
+  stopPreviewSound();
+  if(state.sound==="custom"&&state.customSoundData){
+    const a=new Audio(state.customSoundData);
+    a.play().catch(()=>{});
+  }else if(state.sound!=="none"){
+    playPresetSound(state.sound);
+  }
+}
+function syncSoundUI(){
+  const box=$("soundList");
+  box.innerHTML="";
+  const items=SOUND_LIST.slice();
+  if(state.customSoundData)items.push({id:"custom",name:state.customSoundName||"Custom sound"});
+  items.forEach(s=>{
+    const b=document.createElement("button");
+    b.type="button";
+    b.className="sound-chip";
+    b.setAttribute("aria-pressed",String(state.sound===s.id));
+    const label=document.createElement("span");
+    label.textContent=s.name;
+    b.appendChild(label);
+    if(s.id!=="none")b.insertAdjacentHTML("beforeend",'<svg class="ic"><use href="#i-play"/></svg>');
+    b.onclick=()=>{
+      state.sound=s.id;save();
+      syncSoundUI();
+      if(s.id==="custom")playCustomPreview(state.customSoundData);
+      else if(s.id!=="none")playPresetSound(s.id);
+    };
+    box.appendChild(b);
+  });
+  $("soundFileName").textContent=state.customSoundData?(state.customSoundName||"Custom sound"):"";
+  $("removeSoundBtn").hidden=!state.customSoundData;
+}
+
 /* ---------- State ---------- */
 function defaults(){
   return {v:2,tasks:[],notes:[],quote:DEFAULT_QUOTE,accent:DEFAULT_ACCENT,
     theme:(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light",
-    focus:0,duration:25};
+    focus:0,duration:25,sound:"chime",customSoundData:null,customSoundName:null};
 }
 function normalize(raw){
   if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
@@ -509,6 +605,10 @@ function normalize(raw){
   s.focus=Math.max(0,Number(raw.focus)||0);
   const d=parseInt(raw.duration,10);
   s.duration=(d>=1&&d<=180)?d:25;
+  if(typeof raw.sound==="string"&&(SOUND_LIST.some(x=>x.id===raw.sound)||raw.sound==="custom"))s.sound=raw.sound;
+  if(typeof raw.customSoundData==="string"&&raw.customSoundData.startsWith("data:audio/")&&raw.customSoundData.length<1500000)s.customSoundData=raw.customSoundData;
+  if(typeof raw.customSoundName==="string")s.customSoundName=raw.customSoundName.slice(0,150);
+  if(s.sound==="custom"&&!s.customSoundData)s.sound="chime";
   return s;
 }
 function load(){
@@ -737,9 +837,11 @@ function complete(){
   clearInterval(tick);running=false;
   state.focus+=state.duration;save();renderStats();
   remaining=total;paint();
+  playSound();
   toast("Focus session complete. Nice work.");
 }
 $("start").onclick=()=>{
+  getAudioCtx();
   if(running){
     remaining=Math.max(0,Math.ceil((endAt-Date.now())/1000));
     clearInterval(tick);running=false;paint();
@@ -784,8 +886,8 @@ $("saveQuote").onclick=()=>{
 $("cancelQuote").onclick=closeQuoteEdit;
 
 /* ---------- Settings ---------- */
-function openSettings(){$("settingsModal").classList.add("show");$("doneSettings").focus()}
-function closeSettings(){$("settingsModal").classList.remove("show");$("settingsBtn").focus()}
+function openSettings(){syncSoundUI();$("settingsModal").classList.add("show");$("doneSettings").focus()}
+function closeSettings(){stopPreviewSound();$("settingsModal").classList.remove("show");$("settingsBtn").focus()}
 function setAccent(c){state.accent=c;save();applyAppearance()}
 SWATCHES.forEach(c=>{
   const b=document.createElement("button");
@@ -837,7 +939,7 @@ function replaceState(next){
   expanded.clear();
   $("quote").textContent=state.quote;
   closeQuoteEdit();
-  applyAppearance();syncDuration();
+  applyAppearance();syncDuration();syncSoundUI();
   renderTasks();renderNotes();paint();
 }
 $("saveBtn").onclick=()=>{
@@ -881,9 +983,38 @@ $("resetBtn").onclick=async()=>{
   toast("Everything was reset.");
 };
 
+const MAX_SOUND_BYTES=1024*1024;
+$("uploadSoundBtn").onclick=()=>$("soundFileInput").click();
+$("soundFileInput").addEventListener("change",e=>{
+  const f=e.target.files[0];
+  e.target.value="";
+  if(!f)return;
+  if(!f.type.startsWith("audio/")){toast("Choose an audio file.");return}
+  if(f.size>MAX_SOUND_BYTES){toast("That file is too large. Choose one under 1 MB.");return}
+  const reader=new FileReader();
+  reader.onload=()=>{
+    state.customSoundData=reader.result;
+    state.customSoundName=f.name;
+    state.sound="custom";
+    save();
+    syncSoundUI();
+    playCustomPreview(state.customSoundData);
+  };
+  reader.readAsDataURL(f);
+});
+$("removeSoundBtn").onclick=()=>{
+  stopPreviewSound();
+  state.customSoundData=null;
+  state.customSoundName=null;
+  if(state.sound==="custom")state.sound="chime";
+  save();
+  syncSoundUI();
+};
+
 /* ---------- Init ---------- */
 applyAppearance();
 syncDuration();
+syncSoundUI();
 $("quote").textContent=state.quote;
 renderTasks();
 renderNotes();
