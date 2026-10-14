@@ -27,6 +27,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700&display=swap" rel="stylesheet">
+<script src="chart.umd.min.js"></script>
 
 <style>
 /* ---------- Design tokens ---------- */
@@ -238,6 +239,29 @@ mark{background:var(--pop);color:var(--on-pop);border-radius:4px;padding:0 2px}
 .sound-custom{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
 .sound-filename{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
 
+/* ---------- History ---------- */
+.page-nav{display:flex;gap:18px;margin-bottom:22px;border-bottom:1px solid var(--line)}
+.nav-tab{padding:10px 2px;font-weight:600;font-size:14px;color:var(--muted);border-bottom:2px solid transparent;transition:color .15s,border-color .15s}
+.nav-tab:hover{color:var(--ink)}
+.nav-tab.active{color:var(--accent-text);border-color:var(--accent)}
+.history{display:flex;flex-direction:column;gap:20px}
+.history-title{margin:0;font-size:22px;font-weight:700;letter-spacing:-.02em}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+.kpi-card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;box-shadow:var(--shadow)}
+.kpi-num{font-family:var(--font-head);font-size:24px;font-weight:700;letter-spacing:-.02em}
+.kpi-label{color:var(--muted);font-size:12px;margin-top:4px}
+.chart-card .chart-box{position:relative;height:220px;margin-top:4px}
+.table-wrap{overflow-x:auto}
+.sessions-table{width:100%;border-collapse:collapse;font-size:14px}
+.sessions-table th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer}
+.sessions-table th:hover{color:var(--ink)}
+.sessions-table td{padding:10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.pill{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600}
+.pill-completed{background:var(--accent-soft);color:var(--accent-text)}
+.pill-abandoned{background:var(--danger-soft);color:var(--danger)}
+@media (max-width:860px){.kpi-grid{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:520px){.kpi-grid{grid-template-columns:1fr 1fr}.kpi-num{font-size:20px}}
+
 /* ---------- Toast ---------- */
 .toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:var(--r-md);font-weight:600;font-size:14px;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:60;max-width:calc(100% - 32px)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -341,7 +365,12 @@ mark{background:var(--pop);color:var(--on-pop);border-radius:4px;padding:0 2px}
     </div>
   </header>
 
-  <main class="layout">
+  <nav class="page-nav" id="pageNav">
+    <button type="button" class="nav-tab active" data-page="dashboard">Dashboard</button>
+    <button type="button" class="nav-tab" data-page="history">History</button>
+  </nav>
+
+  <main class="layout" id="pageDashboard">
     <div class="col">
 
       <section class="card hero c-focus">
@@ -446,6 +475,33 @@ mark{background:var(--pop);color:var(--on-pop);border-radius:4px;padding:0 2px}
     </div>
   </main>
 
+  <section class="history" id="pageHistory" hidden>
+    <div class="history-head">
+      <div><h2 class="history-title">Your hay, over time</h2><p class="sub">Every session you've logged since turning this on.</p></div>
+    </div>
+
+    <div class="kpi-grid" id="kpiGrid"></div>
+
+    <div class="card chart-card">
+      <div class="card-head"><div><h2>Last 14 days</h2><p class="sub">Minutes focused per day.</p></div></div>
+      <div class="chart-box"><canvas id="historyChart"></canvas></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div><h2>Sessions</h2><p class="sub">Every logged session, newest first.</p></div>
+        <span class="count" id="sessionCount"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="sessions-table">
+          <thead><tr id="sessionsHead"></tr></thead>
+          <tbody id="sessionsBody"></tbody>
+        </table>
+      </div>
+      <div id="sessionsEmpty" class="empty" hidden>No sessions yet. Finish a focus session to see it here.</div>
+    </div>
+  </section>
+
   <footer class="credit">
     <a class="cotworks-link" href="https://crypticot.github.io/cotworks-portfolio/" target="_blank" rel="noopener">Created by COTworks</a>
   </footer>
@@ -507,7 +563,6 @@ const KEY="haymaker",BASE_TITLE=document.title;
 const DEFAULT_QUOTE="Make hay while the sun shines.",DEFAULT_ACCENT="#1f6b56",OLD_ACCENT="#3a86ff";
 const SWATCHES=["#1f6b56","#3a86ff","#6d5bd0","#e4572e","#c2255c","#334155"];
 const CIRC=2*Math.PI*52;
-
 const SOUND_LIST=[{id:"chime",name:"Chime"},{id:"bell",name:"Bell"},{id:"digital",name:"Digital"},{id:"soft",name:"Soft"},{id:"none",name:"None (silent)"}];
 let audioCtx=null;
 function getAudioCtx(){
@@ -590,7 +645,7 @@ function syncSoundUI(){
 function defaults(){
   return {v:2,tasks:[],notes:[],quote:DEFAULT_QUOTE,accent:DEFAULT_ACCENT,
     theme:(window.matchMedia&&matchMedia("(prefers-color-scheme: dark)").matches)?"dark":"light",
-    focus:0,duration:25,sound:"chime",customSoundData:null,customSoundName:null};
+    focus:0,duration:25,sound:"chime",customSoundData:null,customSoundName:null,sessions:[]};
 }
 function normalize(raw){
   if(!raw||typeof raw!=="object"||Array.isArray(raw))return null;
@@ -609,6 +664,7 @@ function normalize(raw){
   if(typeof raw.customSoundData==="string"&&raw.customSoundData.startsWith("data:audio/")&&raw.customSoundData.length<1500000)s.customSoundData=raw.customSoundData;
   if(typeof raw.customSoundName==="string")s.customSoundName=raw.customSoundName.slice(0,150);
   if(s.sound==="custom"&&!s.customSoundData)s.sound="chime";
+  if(Array.isArray(raw.sessions))s.sessions=raw.sessions.filter(x=>x&&typeof x.start==="number"&&typeof x.elapsedSeconds==="number"&&(x.status==="completed"||x.status==="abandoned")).map(x=>({start:x.start,plannedMinutes:Number(x.plannedMinutes)||0,elapsedSeconds:Math.max(0,Math.round(x.elapsedSeconds)),status:x.status})).slice(0,2000);
   return s;
 }
 function load(){
@@ -805,6 +861,7 @@ $("noteSearch").addEventListener("input",()=>renderNotes());
 
 /* ---------- Focus timer ---------- */
 let total=state.duration*60,remaining=total,running=false,endAt=0,tick=null;
+let sessionStartedAt=null;
 const fmt=s=>String(Math.floor(s/60)).padStart(2,"0")+":"+String(s%60).padStart(2,"0");
 
 function paint(){
@@ -823,10 +880,13 @@ function syncDuration(){
   $("customMin").value=state.duration;
 }
 function setDuration(min){
+  if(sessionStartedAt!==null&&(total-remaining)>=1)logSession("abandoned",total-remaining);
+  sessionStartedAt=null;
   state.duration=min;save();
   clearInterval(tick);running=false;
   total=min*60;remaining=total;
   syncDuration();paint();
+  if(!$("pageHistory").hidden)renderHistory();
 }
 function step(){
   const left=Math.max(0,Math.ceil((endAt-Date.now())/1000));
@@ -836,9 +896,12 @@ function step(){
 function complete(){
   clearInterval(tick);running=false;
   state.focus+=state.duration;save();renderStats();
+  logSession("completed",total);
+  sessionStartedAt=null;
   remaining=total;paint();
   playSound();
   toast("Focus session complete. Nice work.");
+  if(!$("pageHistory").hidden)renderHistory();
 }
 $("start").onclick=()=>{
   getAudioCtx();
@@ -847,12 +910,18 @@ $("start").onclick=()=>{
     clearInterval(tick);running=false;paint();
     return;
   }
+  if(sessionStartedAt===null)sessionStartedAt=Date.now();
   running=true;
   endAt=Date.now()+remaining*1000;
   tick=setInterval(step,250);
   paint();
 };
-$("reset").onclick=()=>{clearInterval(tick);running=false;remaining=total;paint()};
+$("reset").onclick=()=>{
+  if(sessionStartedAt!==null&&(total-remaining)>=1)logSession("abandoned",total-remaining);
+  sessionStartedAt=null;
+  clearInterval(tick);running=false;remaining=total;paint();
+  if(!$("pageHistory").hidden)renderHistory();
+};
 document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>setDuration(+c.dataset.min));
 $("customMin").addEventListener("change",()=>{
   let v=parseInt($("customMin").value,10);
@@ -884,6 +953,151 @@ $("saveQuote").onclick=()=>{
   closeQuoteEdit();
 };
 $("cancelQuote").onclick=closeQuoteEdit;
+
+/* ---------- History ---------- */
+function logSession(status,elapsedSeconds){
+  state.sessions=state.sessions||[];
+  state.sessions.unshift({start:sessionStartedAt,plannedMinutes:state.duration,elapsedSeconds:Math.max(0,Math.round(elapsedSeconds)),status});
+  if(state.sessions.length>2000)state.sessions.length=2000;
+  save();
+}
+function fmtDuration(totalSeconds){
+  const m=Math.round(totalSeconds/60);
+  if(m<60)return m+"m";
+  const h=Math.floor(m/60),r=m%60;
+  return h+"h "+String(r).padStart(2,"0")+"m";
+}
+let sessionSort={key:"start",dir:"desc"};
+const SESSION_COLS=[
+  {key:"start",label:"Date"},
+  {key:"startTime",label:"Started"},
+  {key:"plannedMinutes",label:"Planned"},
+  {key:"elapsedSeconds",label:"Actual"},
+  {key:"status",label:"Status"}
+];
+function sessionSortValue(s,key){
+  if(key==="startTime")return s.start;
+  return s[key];
+}
+function sortSessions(key){
+  if(sessionSort.key===key)sessionSort.dir=sessionSort.dir==="asc"?"desc":"asc";
+  else sessionSort={key,dir:"desc"};
+  renderHistory();
+}
+function renderSessionsHead(){
+  const tr=$("sessionsHead");
+  tr.innerHTML="";
+  SESSION_COLS.forEach(c=>{
+    const th=document.createElement("th");
+    th.textContent=c.label+(sessionSort.key===c.key?(sessionSort.dir==="asc"?" \u25B2":" \u25BC"):"");
+    th.onclick=()=>sortSessions(c.key);
+    tr.appendChild(th);
+  });
+}
+let historyChart=null;
+function renderHistory(){
+  renderSessionsHead();
+  const sessions=(state.sessions||[]).slice();
+  const completed=sessions.filter(s=>s.status==="completed");
+
+  const totalSeconds=completed.reduce((sum,s)=>sum+s.elapsedSeconds,0);
+  const avgSeconds=completed.length?totalSeconds/completed.length:0;
+  const dayTotals=new Map();
+  const weekdayTotals=[0,0,0,0,0,0,0];
+  completed.forEach(s=>{
+    const d=new Date(s.start);
+    const key=d.toDateString();
+    dayTotals.set(key,(dayTotals.get(key)||0)+s.elapsedSeconds/60);
+    weekdayTotals[d.getDay()]+=s.elapsedSeconds/60;
+  });
+  let longestStreak=0;
+  if(dayTotals.size){
+    const days=Array.from(dayTotals.keys()).map(k=>new Date(k)).sort((a,b)=>a-b);
+    let run=1;longestStreak=1;
+    for(let i=1;i<days.length;i++){
+      const diff=Math.round((days[i]-days[i-1])/86400000);
+      if(diff===1){run++;longestStreak=Math.max(longestStreak,run)}
+      else if(diff>1){run=1}
+    }
+  }
+  const weekdayNames=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  let bestDayIdx=-1;
+  weekdayTotals.forEach((v,i)=>{if(bestDayIdx===-1||v>weekdayTotals[bestDayIdx])bestDayIdx=i});
+  const bestDay=(completed.length&&weekdayTotals[bestDayIdx]>0)?weekdayNames[bestDayIdx]:"\u2013";
+
+  const kpis=[
+    {num:fmtDuration(totalSeconds),label:"Total hay time"},
+    {num:completed.length?fmtDuration(avgSeconds):"\u2013",label:"Average session"},
+    {num:String(completed.length),label:"Sessions completed"},
+    {num:completed.length?(longestStreak+(longestStreak===1?" day":" days")):"\u2013",label:"Longest streak"},
+    {num:bestDay,label:"Most focused day"}
+  ];
+  const grid=$("kpiGrid");
+  grid.innerHTML="";
+  kpis.forEach(k=>{
+    const c=document.createElement("div");
+    c.className="kpi-card";
+    const num=document.createElement("div");num.className="kpi-num";num.textContent=k.num;
+    const lbl=document.createElement("div");lbl.className="kpi-label";lbl.textContent=k.label;
+    c.appendChild(num);c.appendChild(lbl);
+    grid.appendChild(c);
+  });
+
+  const labels=[],values=[];
+  for(let i=13;i>=0;i--){
+    const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-i);
+    labels.push(d.toLocaleDateString(undefined,{month:"short",day:"numeric"}));
+    values.push(Math.round(dayTotals.get(d.toDateString())||0));
+  }
+  if(window.Chart){
+    const ctx=$("historyChart").getContext("2d");
+    if(historyChart)historyChart.destroy();
+    const accent=getComputedStyle(document.documentElement).getPropertyValue("--accent").trim()||"#1f6b56";
+    historyChart=new Chart(ctx,{
+      type:"bar",
+      data:{labels,datasets:[{data:values,backgroundColor:accent,borderRadius:4,maxBarThickness:24}]},
+      options:{
+        responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{callbacks:{label:item=>item.parsed.y+" min"}}},
+        scales:{x:{grid:{display:false}},y:{beginAtZero:true,ticks:{precision:0}}}
+      }
+    });
+  }
+
+  const sorted=sessions.slice().sort((a,b)=>{
+    const va=sessionSortValue(a,sessionSort.key),vb=sessionSortValue(b,sessionSort.key);
+    let cmp=typeof va==="string"?va.localeCompare(vb):va-vb;
+    return sessionSort.dir==="asc"?cmp:-cmp;
+  });
+  const body=$("sessionsBody");
+  body.innerHTML="";
+  $("sessionCount").textContent=sessions.length?(sessions.length+(sessions.length===1?" session":" sessions")):"";
+  $("sessionsEmpty").hidden=sessions.length>0;
+  sorted.forEach(s=>{
+    const d=new Date(s.start);
+    const tr=document.createElement("tr");
+    const dateTd=document.createElement("td");dateTd.textContent=d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"});
+    const timeTd=document.createElement("td");timeTd.textContent=d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit",hour12:true});
+    const plannedTd=document.createElement("td");plannedTd.textContent=s.plannedMinutes+"m";
+    const actualTd=document.createElement("td");actualTd.textContent=fmtDuration(s.elapsedSeconds);
+    const statusTd=document.createElement("td");
+    const pill=document.createElement("span");
+    pill.className="pill "+(s.status==="completed"?"pill-completed":"pill-abandoned");
+    pill.textContent=s.status==="completed"?"Completed":"Abandoned";
+    statusTd.appendChild(pill);
+    tr.append(dateTd,timeTd,plannedTd,actualTd,statusTd);
+    body.appendChild(tr);
+  });
+}
+document.querySelectorAll(".nav-tab").forEach(tab=>{
+  tab.onclick=()=>{
+    document.querySelectorAll(".nav-tab").forEach(t=>t.classList.toggle("active",t===tab));
+    const page=tab.dataset.page;
+    $("pageDashboard").hidden=page!=="dashboard";
+    $("pageHistory").hidden=page!=="history";
+    if(page==="history")renderHistory();
+  };
+});
 
 /* ---------- Settings ---------- */
 function openSettings(){syncSoundUI();$("settingsModal").classList.add("show");$("doneSettings").focus()}
@@ -934,6 +1148,7 @@ document.addEventListener("keydown",e=>{
 function replaceState(next){
   state=next;save();
   clearInterval(tick);running=false;
+  sessionStartedAt=null;
   total=state.duration*60;remaining=total;
   $("noteSearch").value="";
   expanded.clear();
@@ -941,6 +1156,7 @@ function replaceState(next){
   closeQuoteEdit();
   applyAppearance();syncDuration();syncSoundUI();
   renderTasks();renderNotes();paint();
+  renderHistory();
 }
 $("saveBtn").onclick=()=>{
   const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
